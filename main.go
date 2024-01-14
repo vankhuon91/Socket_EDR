@@ -58,7 +58,6 @@ func main() {
 	//defer server.Close()
 
 	http.Handle("/socket.io/", server)
-	http.Handle("/", http.FileServer(http.Dir("./asset")))
-	log.Println("Serving at localhost:8000...")
-	log.Fatal(http.ListenAndServe(":8000", nil))
+	log.Fatal(http.ListenAndServe("", nil))
+	log.Println("start")
 }
