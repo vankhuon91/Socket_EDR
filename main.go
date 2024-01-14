@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	socketio "github.com/googollee/go-socket.io"
 )
@@ -58,6 +59,8 @@ func main() {
 	//defer server.Close()
 
 	http.Handle("/socket.io/", server)
-	log.Fatal(http.ListenAndServe("", nil))
-	log.Println("start")
+	port := os.Getenv("PORT")
+	log.Println("start", port)
+	log.Fatal(http.ListenAndServe(`:`+port, nil))
+
 }
