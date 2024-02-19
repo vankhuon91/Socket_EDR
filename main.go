@@ -7,6 +7,7 @@ import (
 
 	socketio "github.com/googollee/go-socket.io"
 	_ "github.com/joho/godotenv/autoload"
+	"github.com/rs/cors"
 )
 
 type AttrJson map[string]interface{}
@@ -93,6 +94,7 @@ func main() {
 	http.Handle("/socket.io/", server)
 	port := os.Getenv("PORT")
 	log.Println("start", port)
-	log.Fatal(http.ListenAndServe(`:`+port, nil))
+	handler := cors.Default().Handler(server)
+	log.Fatal(http.ListenAndServe(`:`+port, handler))
 
 }
