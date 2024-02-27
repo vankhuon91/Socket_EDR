@@ -23,7 +23,30 @@ type Msg struct {
 var UserConns Connections
 var AgentConns Connections
 
+func checktoken(token string) bool {
+	api := os.Getenv("API") + "/api/v1/token/check"
+	req, err := http.NewRequest("GET", api, nil)
+	if err != nil {
+		log.Println(err)
+		return false
+	}
+	// add a custom header to the request
+	// here we specify the header name and value as arguments
+	req.Header.Add("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Println(err)
+		return false
+	}
+	log.Println("check token:", resp.Status)
+	defer resp.Body.Close()
+	return resp.Status == "200 OK"
+}
+
 func main() {
+	port := os.Getenv("PORT")
+
 	server := socketio.NewServer(nil)
 	UserConns = make(Connections)
 	AgentConns = make(Connections)
@@ -32,29 +55,28 @@ func main() {
 	server.OnConnect("/user", func(s socketio.Conn) error {
 		token := s.RemoteHeader().Get("token")
 		client := s.RemoteHeader().Get("client")
-		if (token == "") || (client == "") {
+		if (client == "") || !(checktoken(token)) {
 			s.Close()
 			return nil
 		}
 		UserConns[client] = &s
 
 		//s.SetContext(client)
-		log.Println("User connected:", s.ID(), token, client)
+		log.Println("User connected:", s.ID(), client)
 
 		return nil
 	})
 
 	//agent connect
 	server.OnConnect("/agent", func(s socketio.Conn) error {
-		token := s.RemoteHeader().Get("token")
 		client := s.RemoteHeader().Get("client")
-		if (token == "") || (client == "") {
+		if client == "" {
 			s.Close()
 			return nil
 		}
 		AgentConns[client] = &s
 		//s.SetContext(client)
-		log.Println("Agent connected:", s.ID(), token, client)
+		log.Println("Agent connected:", s.ID(), client)
 		return nil
 	})
 
@@ -92,7 +114,7 @@ func main() {
 	defer server.Close()
 
 	http.Handle("/socket.io/", server)
-	port := os.Getenv("PORT")
+
 	log.Println("start", port)
 	handler := cors.Default().Handler(server)
 	log.Fatal(http.ListenAndServe(`:`+port, handler))
