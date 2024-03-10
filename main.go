@@ -20,6 +20,12 @@ type Msg struct {
 	CommandInfo AttrJson `json:"command_info"`
 }
 
+type MsgData struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	Data string `json:"data"`
+}
+
 var UserConns Connections
 var AgentConns Connections
 
@@ -93,6 +99,16 @@ func main() {
 
 	})
 
+	server.OnEvent("/agent", "audio", func(s socketio.Conn, msg MsgData) {
+		log.Println("audio from agent:", msg)
+		var UserConn socketio.Conn
+		if UserConns[msg.To] != nil {
+			msg.From = s.RemoteHeader().Get("client")
+			UserConn = *UserConns[msg.To]
+			UserConn.Emit("audio", msg)
+			log.Println("send to", msg.To)
+		}
+	})
 	//agent send message
 	server.OnEvent("/agent", "msg", func(s socketio.Conn, msg Msg) {
 		log.Println("msg from agent:", msg)
