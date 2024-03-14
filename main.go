@@ -132,7 +132,8 @@ func main() {
 	http.Handle("/socket.io/", server)
 
 	log.Println("start", port)
-	handler := cors.Default().Handler(server)
+
+	handler := cors.AllowAll().Handler(server)
 	log.Fatal(http.ListenAndServe(`:`+port, handler))
 
 }
