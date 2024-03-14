@@ -59,6 +59,7 @@ func main() {
 
 	//user connect
 	server.OnConnect("/user", func(s socketio.Conn) error {
+		log.Println(s)
 		token := s.RemoteHeader().Get("token")
 		client := s.RemoteHeader().Get("client")
 		if (client == "") || !(checktoken(token)) {
@@ -75,6 +76,7 @@ func main() {
 
 	//agent connect
 	server.OnConnect("/agent", func(s socketio.Conn) error {
+		log.Println(s)
 		client := s.RemoteHeader().Get("client")
 		if client == "" {
 			s.Close()
