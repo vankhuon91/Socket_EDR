@@ -28,6 +28,7 @@ type MsgData struct {
 
 var UserConns Connections
 var AgentConns Connections
+var ListAgents []string
 
 func checktoken(token string) bool {
 	api := os.Getenv("API") + "/api/v1/token/check"
@@ -68,6 +69,7 @@ func main() {
 		}
 		UserConns[client] = &s
 
+		s.Emit("list_agents", ListAgents)
 		//s.SetContext(client)
 		log.Println("User connected:", s.ID(), client)
 
@@ -83,6 +85,12 @@ func main() {
 			return nil
 		}
 		AgentConns[client] = &s
+		ListAgents = append(ListAgents, client)
+		var UserConn socketio.Conn
+		for _, user_conn := range UserConns {
+			UserConn = *user_conn
+			UserConn.Emit("list_agents", ListAgents)
+		}
 		//s.SetContext(client)
 		log.Println("Agent connected:", s.ID(), client)
 		return nil
