@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	socketio "github.com/googollee/go-socket.io"
 	_ "github.com/joho/godotenv/autoload"
@@ -28,7 +29,8 @@ type MsgData struct {
 
 var UserConns Connections
 var AgentConns Connections
-var ListAgents []string
+var ListAgents map[string]string
+var ListUsers map[string]string
 
 func checktoken(token string) bool {
 	api := os.Getenv("API") + "/api/v1/token/check"
@@ -57,6 +59,7 @@ func main() {
 	server := socketio.NewServer(nil)
 	UserConns = make(Connections)
 	AgentConns = make(Connections)
+	ListAgents = make(map[string]string)
 
 	//user connect
 	server.OnConnect("/user", func(s socketio.Conn) error {
@@ -85,7 +88,7 @@ func main() {
 			return nil
 		}
 		AgentConns[client] = &s
-		ListAgents = append(ListAgents, client)
+		ListAgents[client] = time.Now().Format("2006.01.02 15:04:05")
 		var UserConn socketio.Conn
 		for _, user_conn := range UserConns {
 			UserConn = *user_conn
@@ -133,7 +136,19 @@ func main() {
 	})
 
 	server.OnDisconnect("/", func(s socketio.Conn, reason string) {
-		log.Println("closed:", s.Context(), reason)
+		var client = s.RemoteHeader().Get("client")
+		if s.RemoteHeader().Get("token") == "" {
+			//agent
+			delete(ListAgents, client)
+			var UserConn socketio.Conn
+			for _, user_conn := range UserConns {
+				UserConn = *user_conn
+				UserConn.Emit("list_agents", ListAgents)
+			}
+		} else {
+			//user
+		}
+		log.Println("closed:", s.RemoteHeader().Get("client"), reason)
 	})
 
 	go server.Serve()
