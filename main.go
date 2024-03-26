@@ -63,7 +63,6 @@ func main() {
 
 	//user connect
 	server.OnConnect("/user", func(s socketio.Conn) error {
-		log.Println(s)
 		token := s.RemoteHeader().Get("token")
 		client := s.RemoteHeader().Get("client")
 		if (client == "") || !(checktoken(token)) {
@@ -81,12 +80,11 @@ func main() {
 
 	//agent connect
 	server.OnConnect("/agent", func(s socketio.Conn) error {
-		log.Println(s)
 		client := s.RemoteHeader().Get("client")
-		if client == "" {
-			s.Close()
-			return nil
-		}
+		// if client == "" {
+		// 	s.Close()
+		// 	return nil
+		// }
 		AgentConns[client] = &s
 		ListAgents[client] = time.Now().Format("2006.01.02 15:04:05")
 		var UserConn socketio.Conn
@@ -112,16 +110,6 @@ func main() {
 
 	})
 
-	server.OnEvent("/agent", "audio", func(s socketio.Conn, msg MsgData) {
-		log.Println("audio from agent:", msg)
-		var UserConn socketio.Conn
-		if UserConns[msg.To] != nil {
-			msg.From = s.RemoteHeader().Get("client")
-			UserConn = *UserConns[msg.To]
-			UserConn.Emit("audio", msg)
-			log.Println("send to", msg.To)
-		}
-	})
 	//agent send message
 	server.OnEvent("/agent", "msg", func(s socketio.Conn, msg Msg) {
 		log.Println("msg from agent:", msg)
@@ -158,7 +146,12 @@ func main() {
 
 	log.Println("start", port)
 
-	handler := cors.AllowAll().Handler(server)
+	handler := cors.New(cors.Options{
+		AllowedOrigins:   []string{"http://*", "https://*"},
+		AllowCredentials: true,
+		// Enable Debugging for testing, consider disabling in production
+		Debug: false,
+	}).Handler(server)
 	log.Fatal(http.ListenAndServe(`:`+port, handler))
 
 }
