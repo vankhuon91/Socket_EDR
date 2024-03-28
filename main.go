@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -9,13 +10,17 @@ import (
 	"syscall"
 	"time"
 
-	socketio "github.com/googollee/go-socket.io"
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/zishang520/socket.io/v2/socket"
 )
 
 type AttrJson map[string]interface{}
 type Connections map[string]*socket.Socket
+
+type Client struct {
+	ClientID    string `json:"client"`
+	ClientToken string `json:"token"`
+}
 
 type Msg struct {
 	From        string   `json:"from"`
@@ -70,100 +75,61 @@ func main() {
 	server.Of("/user", nil).On("connection", func(clients ...any) {
 		s := clients[0].(*socket.Socket)
 		s.On("msg", func(datas ...any) {
-			msg := datas[0]
+			msg := Msg{}
+			jsonStr, _ := json.Marshal(datas[0])
+			json.Unmarshal(jsonStr, &msg)
 			fmt.Println(msg)
+			if AgentConns[msg.To] != nil {
+				AgentConns[msg.To].Emit("msg", msg)
+			}
 		})
 		s.On("disconnect", func(...any) {
 		})
 		s.On("login", func(datas ...any) {
-			msg := datas[0]
-			fmt.Println(msg)
-		// 	token := s.RemoteHeader().Get("token")
-		// client := s.RemoteHeader().Get("client")
-		// if (client == "") || !(checktoken(token)) {
-		// 	s.Close()
-		// 	return nil
-		// }
-		// UserConns[client] = &s
+			client := Client{}
+			jsonStr, _ := json.Marshal(datas[0])
+			json.Unmarshal(jsonStr, &client)
+			fmt.Println(client)
 
-		// s.Emit("list_agents", ListAgents)
-		// //s.SetContext(client)
-		// log.Println("User connected:", s.ID(), client)
+			if (client.ClientID == "") || !(checktoken(client.ClientToken)) {
+				log.Println("miss token or client")
+
+			}
+			UserConns[client.ClientID] = s
+			s.Emit("list_agents", ListAgents)
+			log.Println("User connected:", client)
 
 		})
-		
+
 	})
 
 	//agent connect
-	server.Of("/agent",nil).On("connection", func(clients ...any) {
+	server.Of("/agent", nil).On("connection", func(clients ...any) {
 		s := clients[0].(*socket.Socket)
 		s.On("msg", func(datas ...any) {
-			msg := datas[0]
+			msg := Msg{}
+			jsonStr, _ := json.Marshal(datas[0])
+			json.Unmarshal(jsonStr, &msg)
 			fmt.Println(msg)
+			if UserConns[msg.To] != nil {
+				UserConns[msg.To].Emit("msg", msg)
+			}
 		})
 		s.On("disconnect", func(...any) {
 		})
 		s.On("login", func(datas ...any) {
-			msg := datas[0]
-			fmt.Println(msg)})
-	//	client := s.RemoteHeader().Get("client")
-		// if client == "" {
-		// 	s.Close()
-		// 	return nil
-		// }
-		AgentConns[client] = s
-		ListAgents[client] = time.Now().Format("2006.01.02 15:04:05")
-		var UserConn socketio.Conn
-		for _, user_conn := range UserConns {
-			UserConn = *user_conn
-			UserConn.Emit("list_agents", ListAgents)
-		}
-		//s.SetContext(client)
-		log.Println("Agent connected:", s.ID(), client)
-	})
-		
-
-
-	//user send message
-	server.OnEvent("/user", "msg", func(s socketio.Conn, msg Msg) {
-		log.Println("msg from user:", msg)
-		var AgentConn socketio.Conn
-		if AgentConns[msg.To] != nil {
-			msg.From = s.RemoteHeader().Get("client")
-			AgentConn = *AgentConns[msg.To]
-			AgentConn.Emit("msg", msg)
-			log.Println("send to", msg.To)
-		}
-
-	})
-
-	//agent send message
-	server.OnEvent("/agent", "msg", func(s socketio.Conn, msg Msg) {
-		log.Println("msg from agent:", msg)
-		var UserConn socketio.Conn
-		if UserConns[msg.To] != nil {
-			msg.From = s.RemoteHeader().Get("client")
-			UserConn = *UserConns[msg.To]
-			UserConn.Emit("msg", msg)
-			log.Println("send to", msg.To)
-		}
-
-	})
-
-	server.OnDisconnect("/", func(s socketio.Conn, reason string) {
-		var client = s.RemoteHeader().Get("client")
-		if s.RemoteHeader().Get("token") == "" {
-			//agent
-			delete(ListAgents, client)
-			var UserConn socketio.Conn
+			client := Client{}
+			jsonStr, _ := json.Marshal(datas[0])
+			json.Unmarshal(jsonStr, &client)
+			fmt.Println(client)
+			AgentConns[client.ClientID] = s
+			ListAgents[client.ClientID] = time.Now().Format("2006.01.02 15:04:05")
 			for _, user_conn := range UserConns {
-				UserConn = *user_conn
-				UserConn.Emit("list_agents", ListAgents)
+				user_conn.Emit("list_agents", ListAgents)
 			}
-		} else {
-			//user
-		}
-		log.Println("closed:", s.RemoteHeader().Get("client"), reason)
+			log.Println("Agent connected:", client)
+		})
+
 	})
 
 	exit := make(chan struct{})
@@ -183,6 +149,5 @@ func main() {
 	<-exit
 	server.Close(nil)
 	os.Exit(0)
-
 
 }
