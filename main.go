@@ -1,18 +1,21 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	socketio "github.com/googollee/go-socket.io"
 	_ "github.com/joho/godotenv/autoload"
-	"github.com/rs/cors"
+	"github.com/zishang520/socket.io/v2/socket"
 )
 
 type AttrJson map[string]interface{}
-type Connections map[string]*socketio.Conn
+type Connections map[string]*socket.Socket
 
 type Msg struct {
 	From        string   `json:"from"`
@@ -56,36 +59,59 @@ func checktoken(token string) bool {
 func main() {
 	port := os.Getenv("PORT")
 
-	server := socketio.NewServer(nil)
+	server := socket.NewServer(nil, nil)
+	http.Handle("/socket.io/", server.ServeHandler(nil))
+	go http.ListenAndServe(":"+port, nil)
 	UserConns = make(Connections)
 	AgentConns = make(Connections)
 	ListAgents = make(map[string]string)
 
 	//user connect
-	server.OnConnect("/user", func(s socketio.Conn) error {
-		token := s.RemoteHeader().Get("token")
-		client := s.RemoteHeader().Get("client")
-		if (client == "") || !(checktoken(token)) {
-			s.Close()
-			return nil
-		}
-		UserConns[client] = &s
+	server.Of("/user", nil).On("connection", func(clients ...any) {
+		s := clients[0].(*socket.Socket)
+		s.On("msg", func(datas ...any) {
+			msg := datas[0]
+			fmt.Println(msg)
+		})
+		s.On("disconnect", func(...any) {
+		})
+		s.On("login", func(datas ...any) {
+			msg := datas[0]
+			fmt.Println(msg)
+		// 	token := s.RemoteHeader().Get("token")
+		// client := s.RemoteHeader().Get("client")
+		// if (client == "") || !(checktoken(token)) {
+		// 	s.Close()
+		// 	return nil
+		// }
+		// UserConns[client] = &s
 
-		s.Emit("list_agents", ListAgents)
-		//s.SetContext(client)
-		log.Println("User connected:", s.ID(), client)
+		// s.Emit("list_agents", ListAgents)
+		// //s.SetContext(client)
+		// log.Println("User connected:", s.ID(), client)
 
-		return nil
+		})
+		
 	})
 
 	//agent connect
-	server.OnConnect("/agent", func(s socketio.Conn) error {
-		client := s.RemoteHeader().Get("client")
+	server.Of("/agent",nil).On("connection", func(clients ...any) {
+		s := clients[0].(*socket.Socket)
+		s.On("msg", func(datas ...any) {
+			msg := datas[0]
+			fmt.Println(msg)
+		})
+		s.On("disconnect", func(...any) {
+		})
+		s.On("login", func(datas ...any) {
+			msg := datas[0]
+			fmt.Println(msg)})
+	//	client := s.RemoteHeader().Get("client")
 		// if client == "" {
 		// 	s.Close()
 		// 	return nil
 		// }
-		AgentConns[client] = &s
+		AgentConns[client] = s
 		ListAgents[client] = time.Now().Format("2006.01.02 15:04:05")
 		var UserConn socketio.Conn
 		for _, user_conn := range UserConns {
@@ -94,8 +120,9 @@ func main() {
 		}
 		//s.SetContext(client)
 		log.Println("Agent connected:", s.ID(), client)
-		return nil
 	})
+		
+
 
 	//user send message
 	server.OnEvent("/user", "msg", func(s socketio.Conn, msg Msg) {
@@ -139,19 +166,23 @@ func main() {
 		log.Println("closed:", s.RemoteHeader().Get("client"), reason)
 	})
 
-	go server.Serve()
-	defer server.Close()
+	exit := make(chan struct{})
+	SignalC := make(chan os.Signal)
 
-	http.Handle("/socket.io/", server)
+	signal.Notify(SignalC, os.Interrupt, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	go func() {
+		for s := range SignalC {
+			switch s {
+			case os.Interrupt, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT:
+				close(exit)
+				return
+			}
+		}
+	}()
 
-	log.Println("start", port)
+	<-exit
+	server.Close(nil)
+	os.Exit(0)
 
-	handler := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://*", "https://*"},
-		AllowCredentials: true,
-		// Enable Debugging for testing, consider disabling in production
-		Debug: false,
-	}).Handler(server)
-	log.Fatal(http.ListenAndServe(`:`+port, handler))
 
 }
