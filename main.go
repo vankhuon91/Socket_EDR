@@ -11,6 +11,7 @@ import (
 	"time"
 
 	_ "github.com/joho/godotenv/autoload"
+	"github.com/rs/cors"
 	"github.com/zishang520/socket.io/v2/socket"
 )
 
@@ -63,10 +64,13 @@ func checktoken(token string) bool {
 
 func main() {
 	port := os.Getenv("PORT")
+	mux := http.NewServeMux()
 
 	server := socket.NewServer(nil, nil)
-	http.Handle("/socket.io/", server.ServeHandler(nil))
-	go http.ListenAndServe(":"+port, nil)
+	mux.Handle("/socket.io/", server.ServeHandler(nil))
+	handler := cors.AllowAll().Handler(mux)
+	go http.ListenAndServe(":"+port, handler)
+	log.Println("start server:", port)
 	UserConns = make(Connections)
 	AgentConns = make(Connections)
 	ListAgents = make(map[string]string)
@@ -74,41 +78,54 @@ func main() {
 	//user connect
 	server.Of("/user", nil).On("connection", func(clients ...any) {
 		s := clients[0].(*socket.Socket)
+		ClientID := ""
+		ClientToken := ""
+		if len(s.Handshake().Headers["Client"]) > 0 {
+			ClientID = s.Handshake().Headers["Client"][0]
+		}
+		if len(s.Handshake().Headers["Token"]) > 0 {
+			ClientToken = s.Handshake().Headers["Token"][0]
+		}
+		if (ClientID == "") || !(checktoken(ClientToken)) {
+			log.Println("miss token or client")
+		}
+		UserConns[ClientID] = s
+		s.Emit("list_agents", ListAgents)
+		log.Println("User connected:", ClientID)
+
 		s.On("msg", func(datas ...any) {
+			log.Println("user on msg:", datas)
 			msg := Msg{}
 			jsonStr, _ := json.Marshal(datas[0])
 			json.Unmarshal(jsonStr, &msg)
-			fmt.Println(msg)
 			if AgentConns[msg.To] != nil {
 				AgentConns[msg.To].Emit("msg", msg)
 			}
 		})
 		s.On("disconnect", func(...any) {
 		})
-		s.On("login", func(datas ...any) {
-			client := Client{}
-			jsonStr, _ := json.Marshal(datas[0])
-			json.Unmarshal(jsonStr, &client)
-			fmt.Println(client)
-
-			if (client.ClientID == "") || !(checktoken(client.ClientToken)) {
-				log.Println("miss token or client")
-
-			}
-			UserConns[client.ClientID] = s
-			s.Emit("list_agents", ListAgents)
-			log.Println("User connected:", client)
-
-		})
-
 	})
 
 	//agent connect
 	server.Of("/agent", nil).On("connection", func(clients ...any) {
 		s := clients[0].(*socket.Socket)
+		ClientID := ""
+		if len(s.Handshake().Headers["Client"]) > 0 {
+			ClientID = s.Handshake().Headers["Client"][0]
+			AgentConns[ClientID] = s
+		}
+
+		ListAgents[ClientID] = time.Now().Format("2006.01.02 15:04:05")
+		for _, user_conn := range UserConns {
+			user_conn.Emit("list_agents", ListAgents)
+		}
+		log.Println("Agent connected:", ClientID)
+
 		s.On("msg", func(datas ...any) {
+			log.Println("agent on msg:", datas)
 			msg := Msg{}
 			jsonStr, _ := json.Marshal(datas[0])
+
 			json.Unmarshal(jsonStr, &msg)
 			fmt.Println(msg)
 			if UserConns[msg.To] != nil {
@@ -116,18 +133,6 @@ func main() {
 			}
 		})
 		s.On("disconnect", func(...any) {
-		})
-		s.On("login", func(datas ...any) {
-			client := Client{}
-			jsonStr, _ := json.Marshal(datas[0])
-			json.Unmarshal(jsonStr, &client)
-			fmt.Println(client)
-			AgentConns[client.ClientID] = s
-			ListAgents[client.ClientID] = time.Now().Format("2006.01.02 15:04:05")
-			for _, user_conn := range UserConns {
-				user_conn.Emit("list_agents", ListAgents)
-			}
-			log.Println("Agent connected:", client)
 		})
 
 	})
