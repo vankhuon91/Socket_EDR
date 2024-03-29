@@ -65,8 +65,10 @@ func checktoken(token string) bool {
 func main() {
 	port := os.Getenv("PORT")
 	mux := http.NewServeMux()
+	opt := socket.ServerOptions{}
+	opt.SetAllowEIO3(true)
+	server := socket.NewServer(nil, &opt)
 
-	server := socket.NewServer(nil, nil)
 	mux.Handle("/socket.io/", server.ServeHandler(nil))
 	handler := cors.AllowAll().Handler(mux)
 	go http.ListenAndServe(":"+port, handler)
