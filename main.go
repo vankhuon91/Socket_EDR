@@ -89,11 +89,14 @@ func main() {
 			ClientToken = s.Handshake().Headers["Token"][0]
 		}
 		if (ClientID == "") || !(checktoken(ClientToken)) {
-			log.Println("miss token or client")
+			s.Emit("notify", "Miss token or client "+ClientID+"--"+ClientToken)
+			log.Println("Miss token or client")
+			s.Disconnect(true)
+		} else {
+			UserConns[ClientID] = s
+			s.Emit("list_agents", ListAgents)
+			log.Println("User connected:", ClientID)
 		}
-		UserConns[ClientID] = s
-		s.Emit("list_agents", ListAgents)
-		log.Println("User connected:", ClientID)
 
 		s.On("msg", func(datas ...any) {
 			log.Println("user on msg:", datas)
@@ -102,9 +105,23 @@ func main() {
 			json.Unmarshal(jsonStr, &msg)
 			if AgentConns[msg.To] != nil {
 				AgentConns[msg.To].Emit("msg", msg)
+				log.Println("User send to agent:", msg)
 			}
 		})
-		s.On("disconnect", func(...any) {
+		s.On("disconnect", func(datas ...any) {
+			ClientID := ""
+			ClientToken := ""
+			if len(s.Handshake().Headers["Client"]) > 0 {
+				ClientID = s.Handshake().Headers["Client"][0]
+			}
+			if len(s.Handshake().Headers["Token"]) > 0 {
+				ClientToken = s.Handshake().Headers["Token"][0]
+			}
+			if (ClientToken != "") && (ClientID != "") {
+				//agent
+				delete(UserConns, ClientID)
+			}
+
 		})
 	})
 
@@ -114,17 +131,20 @@ func main() {
 		ClientID := ""
 		if len(s.Handshake().Headers["Client"]) > 0 {
 			ClientID = s.Handshake().Headers["Client"][0]
+
+		}
+		if ClientID != "" {
 			AgentConns[ClientID] = s
+			ListAgents[ClientID] = time.Now().Format("2006.01.02 15:04:05")
+			log.Println("Agent connected:", ClientID)
 		}
 
-		ListAgents[ClientID] = time.Now().Format("2006.01.02 15:04:05")
 		for _, user_conn := range UserConns {
 			user_conn.Emit("list_agents", ListAgents)
 		}
-		log.Println("Agent connected:", ClientID)
 
 		s.On("msg", func(datas ...any) {
-			log.Println("agent on msg:", datas)
+			log.Println("Receive from agent", datas)
 			msg := Msg{}
 			jsonStr, _ := json.Marshal(datas[0])
 
@@ -132,9 +152,27 @@ func main() {
 			fmt.Println(msg)
 			if UserConns[msg.To] != nil {
 				UserConns[msg.To].Emit("msg", msg)
+				log.Println("Send to user ", msg)
+
 			}
 		})
+
+		// agent disconn
 		s.On("disconnect", func(...any) {
+			ClientID := ""
+
+			if len(s.Handshake().Headers["Client"]) > 0 {
+				ClientID = s.Handshake().Headers["Client"][0]
+			}
+
+			if ClientID != "" {
+
+				delete(AgentConns, ClientID)
+				delete(ListAgents, ClientID)
+				for _, user_conn := range UserConns {
+					user_conn.Emit("list_agents", ListAgents)
+				}
+			}
 		})
 
 	})
